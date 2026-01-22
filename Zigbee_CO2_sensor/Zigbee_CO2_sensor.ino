@@ -4,6 +4,7 @@
 
 #include <Wire.h>
 #include <Zigbee.h>
+#include <math.h>
 
 #include <Adafruit_NeoPixel.h>
 #include <SensirionI2cScd4x.h>
@@ -85,19 +86,32 @@ static void updateLedByCO2(uint16_t ppm) {
     return;
   }
 
-  // --- 1) базовая яркость из HA (0..100% -> 0..255) ---
+  // --- 1) максимальная яркость из HA (0..100% -> 0..255) ---
   uint8_t maxBr = (uint8_t)((uint16_t)g_ledLevel100 * 255 / 100);
 
-  // --- 2) коэффициент яркости от CO2 ---
-  // 400 ppm -> 0.3, 2000 ppm -> 1.0
-  float k;
-  if (ppm <= 400) {
-    k = 0.1f;
-  } else if (ppm >= 2000) {
-    k = 1.0f;
+  // --- 2) экспоненциальная шкала яркости по CO2 ---
+  //  - ниже ~800 ppm почти темно
+  //  - около 1500 ppm резкий рост
+  //  - >= 2000 ppm почти максимум
+  const float CO2_MIN = 400.0f;
+  const float CO2_MAX = 2000.0f;
+
+  float x;
+  if (ppm <= CO2_MIN) {
+    x = 0.0f;
+  } else if (ppm >= CO2_MAX) {
+    x = 1.0f;
   } else {
-    k = 0.3f + (float)(ppm - 400) * (0.7f / 1600.0f);
+    x = (float)(ppm - CO2_MIN) / (CO2_MAX - CO2_MIN); // 0..1
   }
+
+  // Экспонента: чем больше gamma, тем резче "вспышка"
+  const float gamma = 3.0f;   // 2.0 мягче, 3.0 резко, 4.0 очень резко
+  float k = powf(x, gamma);  // 0..1
+
+  // минимальная подсветка, чтобы LED не "пропадал" совсем
+  const float k_min = 0.08f; // 8% от max
+  k = k_min + (1.0f - k_min) * k;
 
   uint8_t br = (uint8_t)(maxBr * k);
   pixels.setBrightness(br);
