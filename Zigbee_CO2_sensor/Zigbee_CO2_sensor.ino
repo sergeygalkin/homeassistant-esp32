@@ -22,6 +22,19 @@ static constexpr uint8_t SCD4X_I2C_ADDR = 0x62;
 // ---------- Zigbee endpoints ----------
 #define EP_TEMP_HUM 10
 #define EP_CO2      11
+#define EP_LED_DIM  12
+#define EP_ALARM    13
+
+// ------------ Common -------------------
+static bool g_zclReady = false;
+static uint32_t g_connectedAt = 0;
+
+// ------------ LED ----------------------
+static bool g_ledEnabled = true;
+static uint8_t g_ledLevel100 = 40;  // стартовая яркость в %, 0..100
+
+// ------------- Binary ------------------
+static bool g_alarm = false; 
 
 // ---------- Timing ----------
 static constexpr uint32_t SENSOR_POLL_MS = 1000;   // опрашиваем чаще, но читаем только когда ready
@@ -34,6 +47,9 @@ SensirionI2cScd4x scd4x;
 
 ZigbeeTempSensor zbTempHum(EP_TEMP_HUM);
 ZigbeeCarbonDioxideSensor zbCO2(EP_CO2);
+ZigbeeDimmableLight zbLedDim = ZigbeeDimmableLight(EP_LED_DIM);
+ZigbeeBinary zbAlarm(EP_ALARM);
+
 
 // ---------- State ----------
 static uint32_t lastPoll = 0;
@@ -55,6 +71,73 @@ static void setLedByCO2(uint16_t ppm) {
   setLedRGB(80, 0, 120);                                // purple
 }
 
+static void updateBrightnessByCO2(uint16_t ppm) {
+  uint8_t b = 40;            // базовая
+  if (ppm > 1500) b = 80;
+  if (ppm > 2500) b = 120;
+  pixels.setBrightness(b);
+}
+
+// обновление LED с “тревогой” (мигание при очень плохом CO2)
+static void updateLedByCO2(uint16_t ppm) {
+  if (!g_ledEnabled) {
+    pixels.clear();
+    pixels.show();
+    return;
+  }
+
+  // применяем яркость из HA (0..100% -> 0..255)
+  uint8_t b = (uint8_t)((uint16_t)g_ledLevel100 * 255 / 100);
+  pixels.setBrightness(b);
+
+  uint8_t r = 0, g = 0, bcol = 0;
+
+  if (ppm < 800) {
+    // ЗЕЛЁНЫЙ
+    r = 0; g = 120; bcol = 0;
+  } else if (ppm < 1200) {
+    // ЖЁЛТЫЙ
+    r = 120; g = 120; bcol = 0;
+  } else if (ppm < 2000) {
+    // ОРАНЖЕВЫЙ
+    r = 160; g = 60; bcol = 0;
+  } else {
+    // КРАСНЫЙ
+    r = 160; g = 0; bcol = 0;
+  }
+
+  pixels.setPixelColor(0, pixels.Color(r, g, bcol));
+  pixels.show();
+}
+
+static void onLedChange(bool state, uint8_t level) {
+  g_ledEnabled = state;
+  if (level > 100) level = 100;
+  g_ledLevel100 = level;
+
+  // применяем яркость сразу (0..100 -> 0..255)
+  uint8_t b = (uint8_t)((uint16_t)g_ledLevel100 * 255 / 100);
+  pixels.setBrightness(b);
+
+  // если выключили — гасим
+  if (!g_ledEnabled) {
+    pixels.clear();
+    pixels.show();
+  }
+}
+
+// ----------- Alarm --------------
+static void updateCo2Alarm(uint16_t ppm) {
+  if (!g_zclReady) return;
+
+  bool newAlarm = (ppm >= 3000);
+  if (newAlarm == g_alarm) return;
+
+  g_alarm = newAlarm;
+
+  zbAlarm.setBinaryInput(g_alarm);
+}
+
 // ---------- SCD4x init ----------
 static bool initScd4x() {
   Wire.begin(I2C_SDA, I2C_SCL);
@@ -67,6 +150,14 @@ static bool initScd4x() {
   // stopPeriodicMeasurement может ругнуться если не был запущен — не фатально
   (void)scd4x.stopPeriodicMeasurement();
   delay(50);
+
+  // ---- ASC target (fresh air reference) ----
+  // Обычно 400 ppm для наружного воздуха
+  err = scd4x.setAutomaticSelfCalibrationTarget(400);
+  if (err) {
+    errorToString(err, errMsg, sizeof(errMsg));
+    Serial.printf("SCD4x setASC target failed: %s\n", errMsg);
+  }
 
   err = scd4x.startPeriodicMeasurement();
   if (err) {
@@ -154,7 +245,12 @@ void setup() {
   zbCO2.setManufacturerAndModel("Custom", "ESP32C5_SCD4x");
   zbCO2.setMinMaxValue(0, 10000);
   zbCO2.setTolerance(50);
+  // Zigbee LED dimmer endpoint (brightness control from HA)
+  zbLedDim.setManufacturerAndModel("Custom", "ESP32C5_SCD4x_LED");
+  zbLedDim.onLightChange(onLedChange);  // callback state+level :contentReference[oaicite:1]{index=1}
 
+  Zigbee.addEndpoint(&zbAlarm);
+  Zigbee.addEndpoint(&zbLedDim);
   Zigbee.addEndpoint(&zbTempHum);
   Zigbee.addEndpoint(&zbCO2);
 
@@ -168,12 +264,29 @@ void setup() {
 
   while (!Zigbee.connected()) delay(100);
   Serial.println("Zigbee connected.");
+  g_connectedAt = millis();   // отметка времени, дальше подождём
 
+  delay(500);
+  if (!g_zclReady && Zigbee.connected() && g_connectedAt && (millis() - g_connectedAt > 2000)) {
+    g_zclReady = true;
+
+    // --- Alarm endpoint (теперь lock уже готов) ---
+    zbAlarm.addBinaryInput();
+    zbAlarm.setBinaryInputApplication(BINARY_INPUT_APPLICATION_TYPE_SECURITY_CARBON_DIOXIDE_DETECTION);
+    zbAlarm.setBinaryInputDescription("CO2 alarm");
+    zbAlarm.setBinaryInput(false);
+    zbLedDim.setLight(g_ledEnabled, g_ledLevel100); // безопаснее после ready
+
+    // локально применим яркость/вкл
+    onLedChange(g_ledEnabled, g_ledLevel100);
+    zbLedDim.restoreLight();
+  }
+
+  
   // reporting
   zbTempHum.setReporting(10, 300, 0.2f);
   zbTempHum.setHumidityReporting(10, 300, 1.0f);
   zbCO2.setReporting(0, 30, 0);
-
   setLedRGB(0, 60, 0); // ready green (до первого CO2)
 }
 
@@ -195,8 +308,10 @@ void loop() {
       zbCO2.setCarbonDioxide((float)co2ppm);
       zbTempHum.setTemperature(tempC);
       zbTempHum.setHumidity(rh);
-
-      setLedByCO2(co2ppm);
+      
+      updateBrightnessByCO2(co2ppm); // more light if 
+      updateLedByCO2(co2ppm);
+      updateCo2Alarm(co2ppm);
 
       if (now - lastReport >= ZB_REPORT_MS) {
         lastReport = now;
