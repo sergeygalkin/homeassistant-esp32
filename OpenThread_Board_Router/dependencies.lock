@@ -1,0 +1,26 @@
+dependencies:
+  cmd_system:
+    dependencies: []
+    source:
+      path: 
+        /Users/gals/esp/esp-idf/examples/system/console/advanced/components/cmd_system
+      type: local
+    version: '*'
+  idf:
+    source:
+      type: idf
+    version: 6.1.0
+  ot_examples_common:
+    dependencies:
+    - name: cmd_system
+      path: ${IDF_PATH}/examples/system/console/advanced/components/cmd_system
+    source:
+      path: 
+        /Users/gals/esp/esp-idf/examples/openthread/ot_common_components/ot_examples_common
+      type: local
+    version: '*'
+direct_dependencies:
+- ot_examples_common
+manifest_hash: 698073e025b3fbc5e30a37861688911502bf1c998167e7719839830a80f9f60a
+target: esp32c5
+version: 2.0.0

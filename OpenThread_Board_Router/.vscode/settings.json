@@ -1,0 +1,16 @@
+{
+  "idf.port": "/dev/tty.usbserial-10",
+  "idf.openOcdConfigs": [
+    "board/esp32c5-bridge.cfg"
+  ],
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32c5"
+  },
+  "clangd.path": "/Users/gals/.espressif/tools/tools/esp-clang/esp-20.1.1_20250829/esp-clang/bin/clangd",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=/Users/gals/.espressif/tools/tools/riscv32-esp-elf/esp-15.2.0_20251204/riscv32-esp-elf/bin/riscv32-esp-elf-gcc",
+    "--compile-commands-dir=/Users/gals/esp/projects/ot_rcp/build"
+  ],
+  "idf.flashType": "UART"
+}
