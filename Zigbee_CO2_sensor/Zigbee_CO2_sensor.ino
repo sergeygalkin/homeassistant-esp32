@@ -36,6 +36,11 @@ static uint8_t g_ledLevel100 = 40;  // стартовая яркость в %, 0
 // ------------- Binary ------------------
 static bool g_alarm = false; 
 
+
+// ------------- For blink ---------------
+static uint16_t g_lastCO2 = 0;
+static bool g_hasCO2 = false;
+
 // ---------- Timing ----------
 static constexpr uint32_t SENSOR_POLL_MS = 1000;   // опрашиваем чаще, но читаем только когда ready
 static constexpr uint32_t ZB_REPORT_MS   = 30000;
@@ -71,14 +76,8 @@ static void setLedByCO2(uint16_t ppm) {
   setLedRGB(80, 0, 120);                                // purple
 }
 
-static void updateBrightnessByCO2(uint16_t ppm) {
-  uint8_t b = 40;            // базовая
-  if (ppm > 1500) b = 80;
-  if (ppm > 2500) b = 120;
-  pixels.setBrightness(b);
-}
 
-// обновление LED с “тревогой” (мигание при очень плохом CO2)
+// LED с “тревогой” (мигание при очень плохом CO2) и повышением яркости
 static void updateLedByCO2(uint16_t ppm) {
   if (!g_ledEnabled) {
     pixels.clear();
@@ -86,29 +85,50 @@ static void updateLedByCO2(uint16_t ppm) {
     return;
   }
 
-  // применяем яркость из HA (0..100% -> 0..255)
-  uint8_t b = (uint8_t)((uint16_t)g_ledLevel100 * 255 / 100);
-  pixels.setBrightness(b);
+  // --- 1) базовая яркость из HA (0..100% -> 0..255) ---
+  uint8_t maxBr = (uint8_t)((uint16_t)g_ledLevel100 * 255 / 100);
 
-  uint8_t r = 0, g = 0, bcol = 0;
-
-  if (ppm < 800) {
-    // ЗЕЛЁНЫЙ
-    r = 0; g = 120; bcol = 0;
-  } else if (ppm < 1200) {
-    // ЖЁЛТЫЙ
-    r = 120; g = 120; bcol = 0;
-  } else if (ppm < 2000) {
-    // ОРАНЖЕВЫЙ
-    r = 160; g = 60; bcol = 0;
+  // --- 2) коэффициент яркости от CO2 ---
+  // 400 ppm -> 0.3, 2000 ppm -> 1.0
+  float k;
+  if (ppm <= 400) {
+    k = 0.1f;
+  } else if (ppm >= 2000) {
+    k = 1.0f;
   } else {
-    // КРАСНЫЙ
-    r = 160; g = 0; bcol = 0;
+    k = 0.3f + (float)(ppm - 400) * (0.7f / 1600.0f);
   }
 
-  pixels.setPixelColor(0, pixels.Color(r, g, bcol));
+  uint8_t br = (uint8_t)(maxBr * k);
+  pixels.setBrightness(br);
+
+  // --- 3) мигание при >= 3000 ppm ---
+  if (ppm >= 3000) {
+    bool on = ((millis() / 500) % 2) == 0; // 1 Гц
+    if (on) pixels.setPixelColor(0, pixels.Color(160, 0, 0));
+    else    pixels.setPixelColor(0, pixels.Color(0, 0, 0));
+    pixels.show();
+    return;
+  }
+
+  // --- 4) ступени цвета ---
+  uint8_t r = 0, g = 0, b = 0;
+
+  if (ppm < 800) {
+    r = 0;   g = 120; b = 0;   // green
+  } else if (ppm < 1200) {
+    r = 120; g = 120; b = 0;   // yellow
+  } else if (ppm < 2000) {
+    r = 160; g = 60;  b = 0;   // orange
+  } else {
+    r = 160; g = 0;   b = 0;   // red
+  }
+
+  pixels.setPixelColor(0, pixels.Color(r, g, b));
   pixels.show();
 }
+
+
 
 static void onLedChange(bool state, uint8_t level) {
   g_ledEnabled = state;
@@ -304,12 +324,12 @@ void loop() {
 
     if (readScd4x(co2ppm, tempC, rh)) {
       Serial.printf("SCD4x: CO2=%u ppm, T=%.2f C, RH=%.2f %%\n", co2ppm, tempC, rh);
-
+      g_lastCO2 = co2ppm;
+      g_hasCO2 = true;
       zbCO2.setCarbonDioxide((float)co2ppm);
       zbTempHum.setTemperature(tempC);
       zbTempHum.setHumidity(rh);
       
-      updateBrightnessByCO2(co2ppm); // more light if 
       updateLedByCO2(co2ppm);
       updateCo2Alarm(co2ppm);
 
@@ -321,7 +341,9 @@ void loop() {
       }
     }
   }
-
+  if (g_hasCO2) {
+    updateLedByCO2(g_lastCO2);   // будет мигать стабильно, даже если датчик обновляется редко
+  }
   delay(20);
 }
 
