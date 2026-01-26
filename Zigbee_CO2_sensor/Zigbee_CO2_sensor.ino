@@ -11,10 +11,14 @@
 #include <SensirionCore.h>   // для errorToString()
 
 // ---------- Pins ----------
-#define I2C_SDA 2
-#define I2C_SCL 3
+// #define I2C_SDA 2 //c5
+// #define I2C_SCL 3 //c5
+#define I2C_SDA 10 //h2
+#define I2C_SCL 11 //h2
 
-#define WS2812_GPIO 27
+
+// #define WS2812_GPIO 27 //c5
+#define WS2812_GPIO 8 // h2
 #define WS2812_LEDS 1
 
 // ---------- SCD4x ----------
