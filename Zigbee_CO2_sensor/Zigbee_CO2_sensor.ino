@@ -96,13 +96,13 @@ static void updateLedByCO2(uint16_t ppm) {
     return;
   }
 
-  // --- 1) максимальная яркость из HA (0..100% -> 0..255) ---
+  // --- 1) Maximum brightness from HA (0..100% -> 0..255) ---
   uint8_t maxBr = (uint8_t)((uint16_t)g_ledLevel100 * 255 / 100);
 
-  // --- 2) экспоненциальная шкала яркости по CO2 ---
-  //  - ниже ~800 ppm почти темно
-  //  - около 1500 ppm резкий рост
-  //  - >= 2000 ppm почти максимум
+  // --- 2) Exponential brightness scale based on CO2 ---
+  //  - below ~800 ppm: almost dark
+  //  - around 1500 ppm: sharp increase
+  //  - >= 2000 ppm: near maximum
   const float CO2_MIN = 400.0f;
   const float CO2_MAX = (float)red_ppm;
 
@@ -115,18 +115,18 @@ static void updateLedByCO2(uint16_t ppm) {
     x = (float)(ppm - CO2_MIN) / (CO2_MAX - CO2_MIN); // 0..1
   }
 
-  // Экспонента: чем больше gamma, тем резче "вспышка"
-  const float gamma = 3.0f;   // 2.0 мягче, 3.0 резко, 4.0 очень резко
+  // Exponent: the higher gamma, the sharper the "flash"
+  const float gamma = 3.0f;   // 2.0 is softer, 3.0 is sharp, 4.0 is very sharp
   float k = powf(x, gamma);  // 0..1
 
-  // минимальная подсветка, чтобы LED не "пропадал" совсем
-  const float k_min = 0.08f; // 8% от max
+  // minimum backlight so the LED doesn't completely "disappear"
+  const float k_min = 0.08f; // 8% from max
   k = k_min + (1.0f - k_min) * k;
 
   uint8_t br = (uint8_t)(maxBr * k);
   pixels.setBrightness(br);
 
-  // --- 3) мигание при >= 1999 ppm ---
+  // --- 3) blinking at >= 1999 ppm --- ---
   if (ppm >= red_ppm) {
     bool on = ((millis() / 500) % 2) == 0; // 1 Гц
     if (on) pixels.setPixelColor(0, pixels.Color(160, 0, 0));
@@ -135,7 +135,7 @@ static void updateLedByCO2(uint16_t ppm) {
     return;
   }
 
-  // --- 4) ступени цвета ---
+  // --- 4) color steps ---
   uint8_t r = 0, g = 0, b = 0;
 
   if (ppm < 800) {
@@ -159,11 +159,11 @@ static void onLedChange(bool state, uint8_t level) {
   if (level > 100) level = 100;
   g_ledLevel100 = level;
 
-  // применяем яркость сразу (0..100 -> 0..255)
+  // apply brightness immediately (0..100 -> 0..255)
   uint8_t b = (uint8_t)((uint16_t)g_ledLevel100 * 255 / 100);
   pixels.setBrightness(b);
 
-  // если выключили — гасим
+  // if turned off — switch off
   if (!g_ledEnabled) {
     pixels.clear();
     pixels.show();
@@ -191,12 +191,11 @@ static bool initScd4x() {
   uint16_t err = 0;
   char errMsg[64];
 
-  // stopPeriodicMeasurement может ругнуться если не был запущен — не фатально
   (void)scd4x.stopPeriodicMeasurement();
   delay(50);
 
   // ---- ASC target (fresh air reference) ----
-  // Обычно 400 ppm для наружного воздуха
+  // Usually 400 ppm for outdoor air
   err = scd4x.setAutomaticSelfCalibrationTarget(400);
   if (err) {
     errorToString(err, errMsg, sizeof(errMsg));
@@ -308,20 +307,20 @@ void setup() {
 
   while (!Zigbee.connected()) delay(100);
   Serial.println("Zigbee connected.");
-  g_connectedAt = millis();   // отметка времени, дальше подождём
+  g_connectedAt = millis();   // timestamp, then we wait
 
   delay(500);
   if (!g_zclReady && Zigbee.connected() && g_connectedAt && (millis() - g_connectedAt > 2000)) {
     g_zclReady = true;
 
-    // --- Alarm endpoint (теперь lock уже готов) ---
+    // --- Alarm endpoint (now the lock is already ready) ---
     zbAlarm.addBinaryInput();
     zbAlarm.setBinaryInputApplication(BINARY_INPUT_APPLICATION_TYPE_SECURITY_CARBON_DIOXIDE_DETECTION);
     zbAlarm.setBinaryInputDescription("CO2 alarm");
     zbAlarm.setBinaryInput(false);
     zbLedDim.setLight(g_ledEnabled, g_ledLevel100); // безопаснее после ready
 
-    // локально применим яркость/вкл
+    // apply brightness/on locally
     onLedChange(g_ledEnabled, g_ledLevel100);
     zbLedDim.restoreLight();
   }
@@ -331,7 +330,7 @@ void setup() {
   zbTempHum.setReporting(10, 300, 0.2f);
   zbTempHum.setHumidityReporting(10, 300, 1.0f);
   zbCO2.setReporting(0, 30, 0);
-  setLedRGB(0, 60, 0); // ready green (до первого CO2)
+  setLedRGB(0, 60, 0); // ready green (before first CO2)
 }
 
 void loop() {
@@ -366,7 +365,7 @@ void loop() {
     }
   }
   if (g_hasCO2) {
-    updateLedByCO2(g_lastCO2);   // будет мигать стабильно, даже если датчик обновляется редко
+    updateLedByCO2(g_lastCO2);   // will blink steadily, even if the sensor updates rarely
   }
   delay(20);
 }
