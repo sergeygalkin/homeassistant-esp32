@@ -11,14 +11,14 @@
 #include <SensirionCore.h>   // for errorToString()
 
 // ---------- Pins ----------
-// #define I2C_SDA 2 //c5
-// #define I2C_SCL 3 //c5
-#define I2C_SDA 10 //h2
-#define I2C_SCL 11 //h2
+// #define I2C_SDA 2 // esp32-c5 dev board
+// #define I2C_SCL 3 // esp32-c5 dev board
+#define I2C_SDA 10 // esp32-h2 Super Mini 
+#define I2C_SCL 11 // esp32-h2 Super Mini
 
 
-// #define WS2812_GPIO 27 //c5
-#define WS2812_GPIO 8 // h2
+// #define WS2812_GPIO 27 // esp32-c5 dev board
+#define WS2812_GPIO 8 // esp32-h2 Super Mini
 #define WS2812_LEDS 1
 
 // ---------- SCD4x ----------
@@ -50,6 +50,12 @@ static bool g_hasCO2 = false;
 static constexpr uint32_t SENSOR_POLL_MS = 1000;   
 static constexpr uint32_t ZB_REPORT_MS   = 30000;
 
+// ----------- PPM Limits -----------------
+static uint16_t green_ppm = 800;
+static uint16_t yellow_ppm = 1200;
+static uint16_t orange_ppm = 1800;
+static uint16_t red_ppm = 1999; // for SCD40
+
 // ---------- Objects ----------
 Adafruit_NeoPixel pixels(WS2812_LEDS, WS2812_GPIO, NEO_GRB + NEO_KHZ800);
 
@@ -74,10 +80,10 @@ static void setLedRGB(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 static void setLedByCO2(uint16_t ppm) {
-  if (ppm < 800)   { setLedRGB(0, 80, 0); return; }     // green
-  if (ppm < 1200)  { setLedRGB(80, 80, 0); return; }    // yellow
-  if (ppm < 2000)  { setLedRGB(120, 40, 0); return; }   // orange
-  if (ppm < 5000)  { setLedRGB(140, 0, 0); return; }    // red
+  if (ppm < green_ppm)   { setLedRGB(0, 80, 0); return; }     // green
+  if (ppm < yellow_ppm)  { setLedRGB(80, 80, 0); return; }    // yellow
+  if (ppm < orange_ppm)  { setLedRGB(120, 40, 0); return; }   // orange 
+  if (ppm < red_ppm)     { setLedRGB(140, 0, 0); return; }    // red
   setLedRGB(80, 0, 120);                                // purple
 }
 
@@ -98,7 +104,7 @@ static void updateLedByCO2(uint16_t ppm) {
   //  - около 1500 ppm резкий рост
   //  - >= 2000 ppm почти максимум
   const float CO2_MIN = 400.0f;
-  const float CO2_MAX = 1999.0f;
+  const float CO2_MAX = (float)red_ppm;
 
   float x;
   if (ppm <= CO2_MIN) {
@@ -121,7 +127,7 @@ static void updateLedByCO2(uint16_t ppm) {
   pixels.setBrightness(br);
 
   // --- 3) мигание при >= 1999 ppm ---
-  if (ppm >= 1999) {
+  if (ppm >= red_ppm) {
     bool on = ((millis() / 500) % 2) == 0; // 1 Гц
     if (on) pixels.setPixelColor(0, pixels.Color(160, 0, 0));
     else    pixels.setPixelColor(0, pixels.Color(0, 0, 0));
@@ -134,9 +140,9 @@ static void updateLedByCO2(uint16_t ppm) {
 
   if (ppm < 800) {
     r = 0;   g = 120; b = 0;   // green
-  } else if (ppm < 1200) {
+  } else if (ppm < yellow_ppm) {
     r = 120; g = 120; b = 0;   // yellow
-  } else if (ppm < 1800) {
+  } else if (ppm < orange_ppm) {
     r = 160; g = 60;  b = 0;   // orange
   } else {
     r = 160; g = 0;   b = 0;   // red
@@ -168,7 +174,7 @@ static void onLedChange(bool state, uint8_t level) {
 static void updateCo2Alarm(uint16_t ppm) {
   if (!g_zclReady) return;
 
-  bool newAlarm = (ppm >= 3000);
+  bool newAlarm = (ppm >= red_ppm);
   if (newAlarm == g_alarm) return;
 
   g_alarm = newAlarm;
