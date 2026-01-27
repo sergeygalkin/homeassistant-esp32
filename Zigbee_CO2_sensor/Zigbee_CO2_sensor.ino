@@ -8,7 +8,7 @@
 
 #include <Adafruit_NeoPixel.h>
 #include <SensirionI2cScd4x.h>
-#include <SensirionCore.h>   // для errorToString()
+#include <SensirionCore.h>   // for errorToString()
 
 // ---------- Pins ----------
 // #define I2C_SDA 2 //c5
@@ -47,7 +47,7 @@ static uint16_t g_lastCO2 = 0;
 static bool g_hasCO2 = false;
 
 // ---------- Timing ----------
-static constexpr uint32_t SENSOR_POLL_MS = 1000;   // опрашиваем чаще, но читаем только когда ready
+static constexpr uint32_t SENSOR_POLL_MS = 1000;   
 static constexpr uint32_t ZB_REPORT_MS   = 30000;
 
 // ---------- Objects ----------
@@ -82,7 +82,7 @@ static void setLedByCO2(uint16_t ppm) {
 }
 
 
-// LED с “тревогой” (мигание при очень плохом CO2) и повышением яркости
+// LED blink
 static void updateLedByCO2(uint16_t ppm) {
   if (!g_ledEnabled) {
     pixels.clear();
@@ -120,8 +120,8 @@ static void updateLedByCO2(uint16_t ppm) {
   uint8_t br = (uint8_t)(maxBr * k);
   pixels.setBrightness(br);
 
-  // --- 3) мигание при >= 3000 ppm ---
-  if (ppm >= 3000) {
+  // --- 3) мигание при >= 1999 ppm ---
+  if (ppm >= 1999) {
     bool on = ((millis() / 500) % 2) == 0; // 1 Гц
     if (on) pixels.setPixelColor(0, pixels.Color(160, 0, 0));
     else    pixels.setPixelColor(0, pixels.Color(0, 0, 0));
@@ -136,7 +136,7 @@ static void updateLedByCO2(uint16_t ppm) {
     r = 0;   g = 120; b = 0;   // green
   } else if (ppm < 1200) {
     r = 120; g = 120; b = 0;   // yellow
-  } else if (ppm < 2000) {
+  } else if (ppm < 1800) {
     r = 160; g = 60;  b = 0;   // orange
   } else {
     r = 160; g = 0;   b = 0;   // red
