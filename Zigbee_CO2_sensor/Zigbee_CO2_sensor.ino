@@ -98,7 +98,7 @@ static void updateLedByCO2(uint16_t ppm) {
   //  - около 1500 ppm резкий рост
   //  - >= 2000 ppm почти максимум
   const float CO2_MIN = 400.0f;
-  const float CO2_MAX = 2000.0f;
+  const float CO2_MAX = 1999.0f;
 
   float x;
   if (ppm <= CO2_MIN) {
