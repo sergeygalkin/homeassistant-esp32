@@ -8,7 +8,7 @@ Case STL:
 ![Arduino settings](zigbee_co2_arduino_settings.png)
 
 
-![Home Assistant](Zigbee2MQTT)
+![Zigbee 2 MQTT in Home Assistant](zigbee_2_mqtt_co2.png)
 
 
 
